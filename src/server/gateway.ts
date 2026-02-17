@@ -10,7 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 // Basic OCMP Types
 const OcmpMessageSchema = z.object({
   type: z.string(),
-  payload: z.any(),
+  payload: z.any().optional(),
+  params: z.any().optional(),
   id: z.string().optional(),
 });
 
@@ -29,10 +30,12 @@ export class GatewayClient extends EventEmitter {
   private latency: number = 0;
   private lastPingTime: number = 0;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private handshakeFallbackTimer: NodeJS.Timeout | null = null;
   private reconnectAttempts: number = 0;
   private readonly maxReconnectDelay: number = 30000;
   private readonly baseReconnectDelay: number = 1000;
   private readonly smokeMode: boolean = process.env.SMOKE_MODE === '1';
+  private sessionReady: boolean = false;
 
   constructor() {
     super();
@@ -48,9 +51,7 @@ export class GatewayClient extends EventEmitter {
   async init() {
     await this.messageDb.init();
     this.connect();
-    if (!this.smokeMode) {
-      this.startHealthChecks();
-    } else {
+    if (this.smokeMode) {
       console.log('[GatewayClient] SMOKE_MODE=1 detected. Health ping interval disabled.');
     }
   }
@@ -79,7 +80,7 @@ export class GatewayClient extends EventEmitter {
     console.log(`[GatewayClient] Attempting to reconnect in ${delay}ms (Attempt ${this.reconnectAttempts})`);
     
     setTimeout(() => {
-      this.init();
+      this.connect();
     }, delay);
   }
 
@@ -108,35 +109,57 @@ export class GatewayClient extends EventEmitter {
   }
 
   connect() {
+    this.sessionReady = false;
+
     if (config.SAFE_MODE) {
       console.log(`[GatewayClient] SAFE_MODE is ON. Using Mock Gateway.`);
       this.ws = new MockGateway();
       (this.ws as MockGateway).connect();
     } else {
-      console.log(`[GatewayClient] Connecting to ${this.url}...`);
-      this.ws = new WebSocket(this.url, {
+      console.log(`[GatewayClient] Connecting to ${this.url} (Compatibility Mode)...`);
+      // Many OpenClaw gateways require the 'ocmp' sub-protocol to be specified
+      this.ws = new WebSocket(this.url, 'ocmp', {
         headers: {
-          Authorization: `Bearer ${this.token}`,
+          // Keep both forms for gateway compatibility.
+          'Authorization': `Bearer ${this.token}`,
+          'X-OpenClaw-Token': this.token,
+          'User-Agent': 'openclaw-command-center/1.0.0',
+          'X-OpenClaw-Version': '1.0.0'
         },
+        // Explicitly disable compression to avoid 'invalid request frame' errors
+        // often caused by extension negotiation failures.
+        perMessageDeflate: false,
+        handshakeTimeout: 10000,
+      });
+
+      this.ws.on('unexpected-response', (_req, res) => {
+        console.error(`[GatewayClient] Handshake rejected by server. Status: ${res.statusCode} ${res.statusMessage}`);
+        console.error(`[GatewayClient] Response headers:`, JSON.stringify(res.headers, null, 2));
       });
     }
 
     this.ws.on('open', () => {
       console.log('[GatewayClient] Connected to Gateway');
-      this.reconnectAttempts = 0;
-      this.register();
-      if (!this.smokeMode) {
-        this.startHealthChecks();
-      }
-      this.rehydrate();
-      if (this.onConnectCallback) {
-        this.onConnectCallback();
-      }
-      this.emit('connected');
+      this.authenticate();
+
+      // For gateways that do not emit explicit auth acks, initialize after a short grace period.
+      if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
+      this.handshakeFallbackTimer = setTimeout(() => {
+        this.markSessionReady('fallback-timeout');
+      }, 1200);
     });
 
     this.ws.on('close', () => {
       console.warn('[GatewayClient] Disconnected from Gateway');
+      this.sessionReady = false;
+      if (this.handshakeFallbackTimer) {
+        clearTimeout(this.handshakeFallbackTimer);
+        this.handshakeFallbackTimer = null;
+      }
+      if (this.healthCheckInterval) {
+        clearInterval(this.healthCheckInterval);
+        this.healthCheckInterval = null;
+      }
       this.emit('disconnected');
       if (this.shouldKeyReconnect && !config.SAFE_MODE) {
         this.handleReconnect();
@@ -169,29 +192,101 @@ export class GatewayClient extends EventEmitter {
     });
 
     if (!config.SAFE_MODE) {
-       (this.ws as WebSocket).on('error', (err) => {
-        console.error('[GatewayClient] Error:', err);
+      const socket = this.ws as WebSocket;
+      socket.on('error', (err: any) => {
+        console.error('[GatewayClient] WebSocket Error:', err.message);
+        if (err.code === 'ECONNREFUSED') {
+          console.error(`[GatewayClient] Connection refused at ${this.url}. Check if the Gateway is running.`);
+        } else if (err.message.includes('1008')) {
+          console.error('[GatewayClient] Policy Violation (1008). This often means the token is invalid or the handshake headers are rejected.');
+        } else if (err.message.includes('handshake')) {
+          console.error('[GatewayClient] Handshake failed. The server might not be a WebSocket server or handles headers differently.');
+        }
       });
     }
   }
 
-  private register() {
+  private authenticate() {
+    const client = {
+      id: 'openclaw-command-center',
+      version: '1.0.0',
+    };
+
+    // Compatibility handshake:
+    // 1) Legacy register frame some gateways require before connect.
     this.send({
-      type: 'register_agent', 
+      type: 'register_agent',
+      id: uuidv4(),
       payload: {
+        token: this.token,
+        client,
         clientType: 'command_center',
+        role: 'operator',
       },
     });
+
+    // 2) Connect frame with both params and payload for strict parsers.
+    this.send({
+      type: 'connect',
+      id: uuidv4(),
+      params: {
+        auth: { token: this.token },
+        role: 'operator',
+        client,
+      },
+      payload: {
+        auth: { token: this.token },
+        role: 'operator',
+        client,
+      },
+    });
+  }
+
+  private markSessionReady(reason: string) {
+    if (this.sessionReady) return;
+    if (!this.ws || (this.ws as any).readyState !== 1) return;
+
+    this.sessionReady = true;
+    this.reconnectAttempts = 0;
+
+    if (this.handshakeFallbackTimer) {
+      clearTimeout(this.handshakeFallbackTimer);
+      this.handshakeFallbackTimer = null;
+    }
+
+    if (!this.smokeMode) {
+      this.startHealthChecks();
+    }
+
+    console.log(`[GatewayClient] Session ready (${reason})`);
+
+    this.rehydrate();
+    if (this.onConnectCallback) {
+      this.onConnectCallback();
+    }
+    this.emit('connected');
   }
 
   private async handleMessage(msg: OcmpMessage) {
     this.emit('raw_message', msg);
     
     switch (msg.type) {
+      case 'connect_ack':
+      case 'connected':
+      case 'session_created':
+      case 'register_success':
+        this.markSessionReady(`ack:${msg.type}`);
+        break;
+      case 'error':
+      case 'auth_error':
+        console.error('[GatewayClient] Gateway reported auth/session error:', msg.payload ?? msg.params ?? msg);
+        break;
       case 'pong':
+        this.markSessionReady('pong');
         this.latency = Date.now() - this.lastPingTime;
         break;
       case 'history_batch':
+        this.markSessionReady('history_batch');
         if (Array.isArray(msg.payload.messages)) {
           for (const m of msg.payload.messages) {
              await this.processIncomingChatMessage(m);
@@ -272,6 +367,7 @@ export class GatewayClient extends EventEmitter {
   disconnect() {
     this.shouldKeyReconnect = false;
     if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+    if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
     this.ws?.close();
   }
 }

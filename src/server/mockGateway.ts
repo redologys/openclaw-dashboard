@@ -15,24 +15,40 @@ export class MockGateway extends EventEmitter {
   }
 
   send(msg: any) {
-    console.log('[MockGateway] Received message:', msg);
+    let parsed = msg;
+    if (typeof msg === 'string') {
+      try {
+        parsed = JSON.parse(msg);
+      } catch {
+        parsed = { type: 'unknown', payload: msg };
+      }
+    }
+
+    console.log('[MockGateway] Received message:', JSON.stringify(parsed));
     
     // Simulate responses based on message type
-    if (msg.type === 'register_agent') {
+    if (parsed.type === 'connect') {
+      setTimeout(() => {
+        this.emit('message', JSON.stringify({
+          type: 'connect_ack',
+          payload: { connected: true, role: parsed.params?.role ?? 'operator' }
+        }));
+      }, 100);
+    } else if (parsed.type === 'register_agent') {
       setTimeout(() => {
         this.emit('message', JSON.stringify({
           type: 'register_success',
           payload: { clientId: 'mock-client-id' }
         }));
       }, 500);
-    } else if (msg.type === 'ping') {
+    } else if (parsed.type === 'ping') {
       setTimeout(() => {
         this.emit('message', JSON.stringify({
           type: 'pong',
-          payload: { timestamp: msg.payload.timestamp }
+          payload: { timestamp: parsed.payload?.timestamp }
         }));
       }, 50);
-    } else if (msg.type === 'request_history') {
+    } else if (parsed.type === 'request_history') {
       setTimeout(() => {
         this.emit('message', JSON.stringify({
           type: 'history_batch',
