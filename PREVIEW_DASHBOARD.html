@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Command Center - Dashboard Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: #09090b;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        .widget {
+            background: rgba(24, 24, 27, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .widget:hover {
+            border-color: rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+        }
+        .widget-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .widget-body {
+            padding: 20px;
+            height: calc(100% - 49px);
+            overflow: auto;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.online {
+            background: #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        .status-dot.offline {
+            background: #ef4444;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .metric {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #10b981, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .log-entry {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            margin: 4px 0;
+            background: rgba(0, 0, 0, 0.3);
+            border-left: 2px solid #3b82f6;
+            border-radius: 4px;
+        }
+        .mission-item {
+            background: rgba(16, 185, 129, 0.05);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+        .badge.warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+        .badge.info {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100">
+    <!-- Topbar -->
+    <div class="h-12 border-b border-white/5 bg-black/40 backdrop-blur-md flex items-center justify-between px-4 sticky top-0 z-50">
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-2 text-zinc-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+                    <line x1="3" y1="9" x2="21" y2="9" stroke-width="2"/>
+                    <line x1="9" y1="21" x2="9" y2="9" stroke-width="2"/>
+                </svg>
+                <select class="bg-transparent border-none text-sm font-medium text-zinc-200 cursor-pointer">
+                    <option>Default</option>
+                    <option>Ops</option>
+                </select>
+            </div>
+            <h1 class="text-sm font-semibold text-zinc-300">OpenClaw Command Center</h1>
+        </div>
+
+        <div class="flex items-center space-x-6">
+            <!-- Connection Status -->
+            <div class="flex items-center space-x-4 text-xs font-mono">
+                <div class="flex items-center space-x-1.5">
+                    <span class="status-dot online"></span>
+                    <span class="text-zinc-400">APP</span>
+                </div>
+
+                <div class="w-px h-3 bg-white/10"></div>
+
+                <div class="flex items-center space-x-1.5">
+                    <svg class="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 20h.01M8.8 20h-.01M4.6 20h-.01M19.4 20h-.01M15.2 20h-.01" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M12 16c3.87 0 7-1.79 7-4s-3.13-4-7-4-7 1.79-7 4 3.13 4 7 4z" stroke-width="2"/>
+                    </svg>
+                    <span class="text-emerald-500">GATEWAY</span>
+                </div>
+            </div>
+
+            <div class="text-xs text-zinc-500">
+                <span class="text-amber-500">⚠ SAFE MODE</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Grid -->
+    <div class="p-6">
+        <div class="grid grid-cols-12 gap-5 auto-rows-[160px]">
+            <!-- CPU Widget -->
+            <div class="col-span-3 row-span-2 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">CPU Usage</span>
+                    <span class="badge info">MOCK</span>
+                </div>
+                <div class="widget-body flex flex-col items-center justify-center">
+                    <div class="metric">23%</div>
+                    <div class="text-xs text-zinc-500 mt-2">4 cores / 8 threads</div>
+                    <div class="w-full mt-4 bg-zinc-800 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-emerald-500 to-blue-500 h-2 rounded-full" style="width: 23%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory Widget -->
+            <div class="col-span-3 row-span-2 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">Memory</span>
+                    <span class="badge info">MOCK</span>
+                </div>
+                <div class="widget-body flex flex-col items-center justify-center">
+                    <div class="metric">4.2 GB</div>
+                    <div class="text-xs text-zinc-500 mt-2">of 16 GB</div>
+                    <div class="w-full mt-4 bg-zinc-800 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-emerald-500 to-blue-500 h-2 rounded-full" style="width: 26%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Tokens Widget -->
+            <div class="col-span-3 row-span-2 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">Session Tokens</span>
+                    <span class="badge info">MOCK</span>
+                </div>
+                <div class="widget-body flex flex-col items-center justify-center">
+                    <div class="metric">45.2K</div>
+                    <div class="text-xs text-zinc-500 mt-2">tokens used</div>
+                    <div class="flex gap-2 mt-4 text-xs">
+                        <div class="text-center">
+                            <div class="text-emerald-500 font-semibold">32.1K</div>
+                            <div class="text-zinc-600">input</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-blue-500 font-semibold">13.1K</div>
+                            <div class="text-zinc-600">output</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Health Widget -->
+            <div class="col-span-3 row-span-2 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">Security Health</span>
+                    <span class="badge success">LIVE</span>
+                </div>
+                <div class="widget-body">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs text-zinc-500">Permission Rules</span>
+                        <span class="text-emerald-500 font-semibold">5 Active</span>
+                    </div>
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs text-zinc-500">Pending Approvals</span>
+                        <span class="text-zinc-400 font-semibold">0</span>
+                    </div>
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs text-zinc-500">Audit Logs</span>
+                        <span class="text-zinc-400 font-semibold">0</span>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-white/5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-amber-500">⚠ Safe Mode</span>
+                            <span class="text-xs text-zinc-600">ON</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mission Control Widget -->
+            <div class="col-span-9 row-span-6 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">Mission Control</span>
+                    <span class="badge info">MOCK</span>
+                </div>
+                <div class="widget-body">
+                    <div class="mission-item">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-sm">Active Agents</span>
+                            <span class="badge warning">0 Online</span>
+                        </div>
+                        <p class="text-xs text-zinc-500">No agents currently registered. Create agents from the Agents page.</p>
+                    </div>
+
+                    <div class="mission-item">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-sm">Conversations</span>
+                            <span class="badge info">0 Active</span>
+                        </div>
+                        <p class="text-xs text-zinc-500">Start a conversation from the Chat page to see activity here.</p>
+                    </div>
+
+                    <div class="mission-item">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-sm">Skills Registry</span>
+                            <span class="badge info">0 Loaded</span>
+                        </div>
+                        <p class="text-xs text-zinc-500">Skills will appear here once registered in the skills directory.</p>
+                    </div>
+
+                    <div class="mission-item">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-sm">Cron Jobs</span>
+                            <span class="badge success">0 Scheduled</span>
+                        </div>
+                        <p class="text-xs text-zinc-500">Automated tasks will be displayed here when configured.</p>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                        <div class="flex items-start space-x-2">
+                            <svg class="w-4 h-4 text-blue-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                            <div>
+                                <p class="text-xs font-semibold text-blue-400">Dashboard Preview Mode</p>
+                                <p class="text-xs text-blue-300/70 mt-1">This is a static preview. Upgrade Node.js to >=20.19.0 to run the full interactive dashboard.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gateway Debug Widget -->
+            <div class="col-span-3 row-span-6 widget">
+                <div class="widget-header">
+                    <span class="text-sm font-semibold text-zinc-300">Gateway Logs</span>
+                    <span class="badge success">LIVE</span>
+                </div>
+                <div class="widget-body overflow-auto" style="height: calc(100% - 20px);">
+                    <div class="log-entry text-emerald-400">
+                        [Backend] SAFE_MODE is ON
+                    </div>
+                    <div class="log-entry text-blue-400">
+                        [GatewayClient] Using Mock Gateway
+                    </div>
+                    <div class="log-entry text-emerald-400">
+                        [MockGateway] Connected (Safe Mode)
+                    </div>
+                    <div class="log-entry text-zinc-500">
+                        [Backend] Server listening on :3001
+                    </div>
+                    <div class="log-entry text-blue-400">
+                        [GatewayClient] Connected to Gateway
+                    </div>
+                    <div class="log-entry text-zinc-500">
+                        [MockGateway] Received: register_agent
+                    </div>
+                    <div class="log-entry text-zinc-500">
+                        [GatewayClient] Starting rehydration...
+                    </div>
+                    <div class="log-entry text-zinc-500">
+                        [MockGateway] Received: request_history
+                    </div>
+                    <div class="log-entry text-emerald-400">
+                        ✓ All API endpoints operational
+                    </div>
+                    <div class="log-entry text-blue-400">
+                        ℹ Gateway Status: Connected
+                    </div>
+                    <div class="log-entry text-emerald-400">
+                        ✓ Permission system loaded (5 rules)
+                    </div>
+                    <div class="log-entry text-amber-400">
+                        ⚠ Safe Mode blocks tool calls
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="mt-6 grid grid-cols-4 gap-4">
+            <a href="#" class="widget p-4 text-center hover:scale-105 transition-transform">
+                <div class="text-2xl mb-2">👥</div>
+                <div class="text-sm font-semibold text-zinc-300">Agents</div>
+                <div class="text-xs text-zinc-600 mt-1">Manage AI agents</div>
+            </a>
+            <a href="#" class="widget p-4 text-center hover:scale-105 transition-transform">
+                <div class="text-2xl mb-2">💬</div>
+                <div class="text-sm font-semibold text-zinc-300">Chat</div>
+                <div class="text-xs text-zinc-600 mt-1">Conversations</div>
+            </a>
+            <a href="#" class="widget p-4 text-center hover:scale-105 transition-transform">
+                <div class="text-2xl mb-2">🏛️</div>
+                <div class="text-sm font-semibold text-zinc-300">Imperial Vault</div>
+                <div class="text-xs text-zinc-600 mt-1">Content hub</div>
+            </a>
+            <a href="#" class="widget p-4 text-center hover:scale-105 transition-transform">
+                <div class="text-2xl mb-2">⚙️</div>
+                <div class="text-sm font-semibold text-zinc-300">Dev Tools</div>
+                <div class="text-xs text-zinc-600 mt-1">Development</div>
+            </a>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="mt-8 text-center text-sm text-zinc-600">
+            <p>📝 OpenClaw Command Center - Dashboard Preview</p>
+            <p class="mt-2 text-xs">Backend API: <span class="text-emerald-500">✓ Running on :3001</span> | Frontend: <span class="text-amber-500">⚠ Node.js upgrade required</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Simulate live data updates
+        let cpuUsage = 23;
+        let memUsage = 4.2;
+
+        setInterval(() => {
+            cpuUsage = Math.max(10, Math.min(90, cpuUsage + (Math.random() - 0.5) * 10));
+            memUsage = Math.max(2, Math.min(14, memUsage + (Math.random() - 0.5) * 0.5));
+
+            document.querySelectorAll('.metric')[0].textContent = Math.round(cpuUsage) + '%';
+            document.querySelectorAll('.metric')[1].textContent = memUsage.toFixed(1) + ' GB';
+
+            document.querySelectorAll('.w-full.bg-zinc-800')[0].children[0].style.width = cpuUsage + '%';
+            document.querySelectorAll('.w-full.bg-zinc-800')[1].children[0].style.width = (memUsage / 16 * 100) + '%';
+        }, 2000);
+    </script>
+</body>
+</html>
