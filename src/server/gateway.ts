@@ -49,6 +49,8 @@ export class GatewayClient extends EventEmitter {
   private reconnectOverrideTimer: NodeJS.Timeout | null = null;
   private connectRequestId: string | null = null;
   private pendingHealthChecks: Map<string, number> = new Map();
+  private readonly clientModeCandidates = ['cli', 'operator', 'dashboard', 'command_center', 'agent'] as const;
+  private clientModeIndex = 0;
 
   constructor() {
     super();
@@ -181,12 +183,15 @@ export class GatewayClient extends EventEmitter {
     return parsed.toString();
   }
 
-  private reconnectNow(reason: string) {
+  private reconnectNow(reason: string, options?: { preserveClientMode?: boolean }) {
     console.log(`[GatewayClient] Forcing reconnect (${reason})...`);
 
     this.sessionReady = false;
     this.connectRequestId = null;
     this.pendingHealthChecks.clear();
+    if (!options?.preserveClientMode) {
+      this.clientModeIndex = 0;
+    }
     if (this.handshakeFallbackTimer) {
       clearTimeout(this.handshakeFallbackTimer);
       this.handshakeFallbackTimer = null;
@@ -361,7 +366,7 @@ export class GatewayClient extends EventEmitter {
       id: 'cli',
       version: '1.0.0',
       platform: normalizePlatform(),
-      mode: 'operator',
+      mode: this.clientModeCandidates[this.clientModeIndex],
     };
 
     if (config.SAFE_MODE) {
@@ -400,6 +405,21 @@ export class GatewayClient extends EventEmitter {
     });
   }
 
+  private tryNextClientMode() {
+    if (this.clientModeIndex >= this.clientModeCandidates.length - 1) {
+      console.error(
+        `[GatewayClient] Exhausted client.mode fallbacks: ${this.clientModeCandidates.join(', ')}`,
+      );
+      return false;
+    }
+
+    this.clientModeIndex += 1;
+    const nextMode = this.clientModeCandidates[this.clientModeIndex];
+    console.warn(`[GatewayClient] Retrying gateway connect with client.mode="${nextMode}"`);
+    this.reconnectNow(`client-mode-fallback:${nextMode}`, { preserveClientMode: true });
+    return true;
+  }
+
   private markSessionReady(reason: string) {
     if (this.sessionReady) return;
     if (!this.ws || (this.ws as any).readyState !== 1) return;
@@ -432,7 +452,21 @@ export class GatewayClient extends EventEmitter {
     if (msg.type === 'res' && msg.id && msg.id === this.connectRequestId) {
       if (msg.ok === false || msg.error) {
         console.error('[GatewayClient] Gateway connect request failed:', msg.error ?? msg);
+        const messageText =
+          typeof msg.error?.message === 'string'
+            ? msg.error.message
+            : typeof msg.error === 'string'
+              ? msg.error
+              : '';
+        if (messageText.includes('/client/mode')) {
+          this.tryNextClientMode();
+        }
         return;
+      }
+      if (this.clientModeIndex > 0) {
+        console.log(
+          `[GatewayClient] Connected using client.mode="${this.clientModeCandidates[this.clientModeIndex]}"`,
+        );
       }
       this.markSessionReady('ack:res/connect');
       return;
