@@ -17,6 +17,12 @@ const OcmpMessageSchema = z.object({
 
 type OcmpMessage = z.infer<typeof OcmpMessageSchema>;
 
+type GatewayRuntimeConfigUpdate = {
+  gatewayUrl?: string;
+  gatewayToken?: string;
+  reconnect?: boolean;
+};
+
 export class GatewayClient extends EventEmitter {
   private ws: WebSocket | MockGateway | null = null;
   private url: string;
@@ -36,6 +42,7 @@ export class GatewayClient extends EventEmitter {
   private readonly baseReconnectDelay: number = 1000;
   private readonly smokeMode: boolean = process.env.SMOKE_MODE === '1';
   private sessionReady: boolean = false;
+  private reconnectOverrideTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
@@ -94,6 +101,99 @@ export class GatewayClient extends EventEmitter {
       latency: this.latency,
       reconnectAttempts: this.reconnectAttempts
     };
+  }
+
+  getRuntimeConfig() {
+    return {
+      gatewayUrl: this.url,
+      hasToken: this.token.trim().length > 0,
+    };
+  }
+
+  updateRuntimeConfig(update: GatewayRuntimeConfigUpdate) {
+    let changed = false;
+
+    if (typeof update.gatewayUrl === 'string') {
+      const normalizedUrl = this.normalizeGatewayUrl(update.gatewayUrl);
+      if (normalizedUrl !== this.url) {
+        this.url = normalizedUrl;
+        changed = true;
+      }
+    }
+
+    if (typeof update.gatewayToken === 'string') {
+      const trimmedToken = update.gatewayToken.trim();
+      if (trimmedToken.length > 0 && trimmedToken !== this.token) {
+        this.token = trimmedToken;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      console.log(
+        `[GatewayClient] Runtime connection target updated (gatewayUrl=${this.url}, tokenProvided=${this.token.trim().length > 0})`,
+      );
+
+      if (update.reconnect !== false && !config.SAFE_MODE) {
+        this.reconnectNow('runtime-config-update');
+      }
+    }
+
+    return this.getRuntimeConfig();
+  }
+
+  private normalizeGatewayUrl(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      throw new Error('gatewayUrl is required');
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error('gatewayUrl must be a valid ws:// or wss:// URL');
+    }
+
+    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+      throw new Error('gatewayUrl must use ws:// or wss://');
+    }
+
+    return parsed.toString();
+  }
+
+  private reconnectNow(reason: string) {
+    console.log(`[GatewayClient] Forcing reconnect (${reason})...`);
+
+    this.sessionReady = false;
+    if (this.handshakeFallbackTimer) {
+      clearTimeout(this.handshakeFallbackTimer);
+      this.handshakeFallbackTimer = null;
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+
+    if (this.reconnectOverrideTimer) {
+      clearTimeout(this.reconnectOverrideTimer);
+      this.reconnectOverrideTimer = null;
+    }
+
+    this.shouldKeyReconnect = false;
+
+    try {
+      this.ws?.close();
+    } catch (error) {
+      console.warn('[GatewayClient] Failed to close existing gateway socket before reconnect:', error);
+    }
+
+    this.reconnectOverrideTimer = setTimeout(() => {
+      this.shouldKeyReconnect = true;
+      this.reconnectAttempts = 0;
+      this.connect();
+      this.reconnectOverrideTimer = null;
+    }, 100);
   }
 
   async rehydrate() {
@@ -368,6 +468,7 @@ export class GatewayClient extends EventEmitter {
     this.shouldKeyReconnect = false;
     if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
     if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
+    if (this.reconnectOverrideTimer) clearTimeout(this.reconnectOverrideTimer);
     this.ws?.close();
   }
 }

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
+import { installApiBaseUrlFetchShim } from './lib/apiRuntime'
 
 // Import route components
 import RootLayout from './routes/__root'
@@ -81,6 +82,8 @@ const router = createBrowserRouter([
     ],
   },
 ])
+
+installApiBaseUrlFetchShim()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

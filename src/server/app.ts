@@ -92,13 +92,51 @@ export function createApp(
   // --- Gateway Status ---
   app.get('/api/gateway/status', (_req, res) => {
     const status = gateway.getConnectionStatus();
+    const runtime = gateway.getRuntimeConfig();
     res.json({
       connected: status.connected,
       latency: status.latency,
       reconnectAttempts: status.reconnectAttempts,
       safeMode: config.SAFE_MODE,
-      gatewayUrl: config.GATEWAY_URL,
+      gatewayUrl: runtime.gatewayUrl,
     });
+  });
+
+  app.get('/api/gateway/config', (_req, res) => {
+    const status = gateway.getConnectionStatus();
+    const runtime = gateway.getRuntimeConfig();
+    res.json({
+      ...runtime,
+      connected: status.connected,
+      safeMode: config.SAFE_MODE,
+      reconnectAttempts: status.reconnectAttempts,
+      latency: status.latency,
+    });
+  });
+
+  app.post('/api/gateway/config', (req, res) => {
+    try {
+      const gatewayUrl = normalizeOptionalText(req.body?.gatewayUrl);
+      const gatewayToken = normalizeOptionalText(req.body?.gatewayToken);
+      const reconnect = req.body?.reconnect !== false;
+
+      const runtime = gateway.updateRuntimeConfig({
+        gatewayUrl,
+        gatewayToken,
+        reconnect,
+      });
+      const status = gateway.getConnectionStatus();
+
+      res.json({
+        ...runtime,
+        connected: status.connected,
+        safeMode: config.SAFE_MODE,
+        reconnectAttempts: status.reconnectAttempts,
+        latency: status.latency,
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message ?? 'Failed to update gateway config.' });
+    }
   });
 
   // --- Sentinel Health ---
