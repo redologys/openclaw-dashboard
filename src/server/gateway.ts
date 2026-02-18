@@ -346,9 +346,22 @@ export class GatewayClient extends EventEmitter {
   }
 
   private authenticate() {
+    const normalizePlatform = () => {
+      switch (process.platform) {
+        case 'win32':
+          return 'windows';
+        case 'darwin':
+          return 'macos';
+        default:
+          return 'linux';
+      }
+    };
+
     const client = {
-      id: 'openclaw-command-center',
+      id: 'cli',
       version: '1.0.0',
+      platform: normalizePlatform(),
+      mode: 'operator',
     };
 
     if (config.SAFE_MODE) {
@@ -374,14 +387,15 @@ export class GatewayClient extends EventEmitter {
       params: {
         minProtocol: 3,
         maxProtocol: 3,
+        scopes: ['operator.read', 'operator.write'],
+        caps: [],
+        commands: [],
+        permissions: {},
         role: 'operator',
         auth: { token: this.token },
-        client: {
-          ...client,
-          platform: process.platform,
-          mode: 'operator',
-        },
-        userAgent: 'openclaw-command-center/1.0.0',
+        client,
+        locale: 'en-US',
+        userAgent: 'openclaw-cli/1.0.0',
       },
     });
   }
