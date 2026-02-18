@@ -103,7 +103,11 @@ export default function SettingsPage() {
       setReconnectAttempts(payload.reconnectAttempts)
       setHasToken(payload.hasToken)
       setGatewayToken('')
-      setSuccess('Connectivity updated. Backend reconnect requested with the new gateway target.')
+      setSuccess(
+        gatewayToken.trim().length > 0
+          ? 'Connectivity updated. Gateway token accepted and stored in backend runtime (hidden).'
+          : 'Connectivity updated. Backend reconnect requested with the new gateway target.',
+      )
     } catch (err: any) {
       setError(err.message ?? 'Failed to save connectivity settings.')
     } finally {
@@ -242,8 +246,17 @@ export default function SettingsPage() {
               value={gatewayToken}
               onChange={(event) => setGatewayToken(event.target.value)}
               className="w-full rounded-md border border-white/10 bg-black/30 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500/40"
-              placeholder="Leave blank to keep current backend token"
+              placeholder={
+                hasToken
+                  ? 'Token currently stored (hidden). Enter a new token to replace it.'
+                  : 'Leave blank to keep current backend token'
+              }
             />
+            {hasToken && (
+              <p className="text-xs text-emerald-400/90">
+                Backend runtime currently has a gateway token loaded.
+              </p>
+            )}
           </label>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
