@@ -12,6 +12,10 @@ const OcmpMessageSchema = z.object({
   type: z.string(),
   payload: z.any().optional(),
   params: z.any().optional(),
+  method: z.string().optional(),
+  result: z.any().optional(),
+  ok: z.boolean().optional(),
+  error: z.any().optional(),
   id: z.string().optional(),
 });
 
@@ -43,6 +47,8 @@ export class GatewayClient extends EventEmitter {
   private readonly smokeMode: boolean = process.env.SMOKE_MODE === '1';
   private sessionReady: boolean = false;
   private reconnectOverrideTimer: NodeJS.Timeout | null = null;
+  private connectRequestId: string | null = null;
+  private pendingHealthChecks: Map<string, number> = new Map();
 
   constructor() {
     super();
@@ -73,7 +79,20 @@ export class GatewayClient extends EventEmitter {
   private ping() {
     if (this.ws && (this.ws as any).readyState === 1) {
       this.lastPingTime = Date.now();
-      this.send({ type: 'ping', payload: { timestamp: this.lastPingTime } });
+
+      if (config.SAFE_MODE) {
+        this.send({ type: 'ping', payload: { timestamp: this.lastPingTime } });
+        return;
+      }
+
+      const id = uuidv4();
+      this.pendingHealthChecks.set(id, this.lastPingTime);
+      this.send({
+        type: 'req',
+        id,
+        method: 'health',
+        params: {},
+      });
     }
   }
 
@@ -97,7 +116,7 @@ export class GatewayClient extends EventEmitter {
 
   getConnectionStatus() {
     return {
-      connected: !!this.ws && (this.ws as any).readyState === 1,
+      connected: this.sessionReady && !!this.ws && (this.ws as any).readyState === 1,
       latency: this.latency,
       reconnectAttempts: this.reconnectAttempts
     };
@@ -166,6 +185,8 @@ export class GatewayClient extends EventEmitter {
     console.log(`[GatewayClient] Forcing reconnect (${reason})...`);
 
     this.sessionReady = false;
+    this.connectRequestId = null;
+    this.pendingHealthChecks.clear();
     if (this.handshakeFallbackTimer) {
       clearTimeout(this.handshakeFallbackTimer);
       this.handshakeFallbackTimer = null;
@@ -197,6 +218,12 @@ export class GatewayClient extends EventEmitter {
   }
 
   async rehydrate() {
+    if (!config.SAFE_MODE) {
+      // TODO: implement live protocol history replay once upstream event contracts are finalized.
+      console.log('[GatewayClient] Rehydration skipped in live mode (protocol-v3 history endpoint TODO).');
+      return;
+    }
+
     console.log('[GatewayClient] Starting rehydration...');
     const messages = this.messageDb.get();
     const lastMsg = messages[messages.length - 1];
@@ -210,6 +237,8 @@ export class GatewayClient extends EventEmitter {
 
   connect() {
     this.sessionReady = false;
+    this.connectRequestId = null;
+    this.pendingHealthChecks.clear();
 
     if (config.SAFE_MODE) {
       console.log(`[GatewayClient] SAFE_MODE is ON. Using Mock Gateway.`);
@@ -242,16 +271,20 @@ export class GatewayClient extends EventEmitter {
       console.log('[GatewayClient] Connected to Gateway');
       this.authenticate();
 
-      // For gateways that do not emit explicit auth acks, initialize after a short grace period.
-      if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
-      this.handshakeFallbackTimer = setTimeout(() => {
-        this.markSessionReady('fallback-timeout');
-      }, 1200);
+      // Safe mode mock can operate without an explicit auth ack.
+      if (config.SAFE_MODE) {
+        if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
+        this.handshakeFallbackTimer = setTimeout(() => {
+          this.markSessionReady('fallback-timeout');
+        }, 1200);
+      }
     });
 
     this.ws.on('close', () => {
       console.warn('[GatewayClient] Disconnected from Gateway');
       this.sessionReady = false;
+      this.connectRequestId = null;
+      this.pendingHealthChecks.clear();
       if (this.handshakeFallbackTimer) {
         clearTimeout(this.handshakeFallbackTimer);
         this.handshakeFallbackTimer = null;
@@ -271,13 +304,19 @@ export class GatewayClient extends EventEmitter {
         const parsed = typeof data === 'string' ? JSON.parse(data) : JSON.parse(data.toString());
         
         // Handle pending requests
-        if (parsed.id && this.pendingRequests.has(parsed.id)) {
+        if (parsed.id && this.pendingRequests.has(parsed.id) && parsed.type === 'res') {
             const callback = this.pendingRequests.get(parsed.id);
             if (callback) {
-                callback(parsed.payload);
+                callback(parsed.ok === false ? { error: parsed.error ?? 'Gateway request failed' } : (parsed.result ?? parsed.payload));
                 this.pendingRequests.delete(parsed.id);
                 return;
             }
+        }
+
+        if (parsed.id && this.pendingHealthChecks.has(parsed.id) && parsed.type === 'res') {
+          const started = this.pendingHealthChecks.get(parsed.id)!;
+          this.latency = Math.max(0, Date.now() - started);
+          this.pendingHealthChecks.delete(parsed.id);
         }
 
         const msg = OcmpMessageSchema.safeParse(parsed);
@@ -312,32 +351,37 @@ export class GatewayClient extends EventEmitter {
       version: '1.0.0',
     };
 
-    // Compatibility handshake:
-    // 1) Legacy register frame some gateways require before connect.
-    this.send({
-      type: 'register_agent',
-      id: uuidv4(),
-      payload: {
-        token: this.token,
-        client,
-        clientType: 'command_center',
-        role: 'operator',
-      },
-    });
+    if (config.SAFE_MODE) {
+      this.send({
+        type: 'connect',
+        id: uuidv4(),
+        params: {
+          auth: { token: this.token },
+          role: 'operator',
+          client,
+        },
+      });
+      return;
+    }
 
-    // 2) Connect frame with both params and payload for strict parsers.
+    // Protocol-v3 handshake expected by modern OpenClaw gateway builds.
+    const requestId = uuidv4();
+    this.connectRequestId = requestId;
     this.send({
-      type: 'connect',
-      id: uuidv4(),
+      type: 'req',
+      id: requestId,
+      method: 'connect',
       params: {
-        auth: { token: this.token },
+        minProtocol: 3,
+        maxProtocol: 3,
         role: 'operator',
-        client,
-      },
-      payload: {
         auth: { token: this.token },
-        role: 'operator',
-        client,
+        client: {
+          ...client,
+          platform: process.platform,
+          mode: 'operator',
+        },
+        userAgent: 'openclaw-command-center/1.0.0',
       },
     });
   }
@@ -348,6 +392,7 @@ export class GatewayClient extends EventEmitter {
 
     this.sessionReady = true;
     this.reconnectAttempts = 0;
+    this.connectRequestId = null;
 
     if (this.handshakeFallbackTimer) {
       clearTimeout(this.handshakeFallbackTimer);
@@ -370,6 +415,21 @@ export class GatewayClient extends EventEmitter {
   private async handleMessage(msg: OcmpMessage) {
     this.emit('raw_message', msg);
     
+    if (msg.type === 'res' && msg.id && msg.id === this.connectRequestId) {
+      if (msg.ok === false || msg.error) {
+        console.error('[GatewayClient] Gateway connect request failed:', msg.error ?? msg);
+        return;
+      }
+      this.markSessionReady('ack:res/connect');
+      return;
+    }
+
+    if (msg.type === 'event' && msg.method === 'connect.challenge' && !this.connectRequestId) {
+      // Some gateway builds send challenge first; re-send connect if we do not have one in flight.
+      this.authenticate();
+      return;
+    }
+
     switch (msg.type) {
       case 'connect_ack':
       case 'connected':
@@ -448,11 +508,20 @@ export class GatewayClient extends EventEmitter {
       const id = uuidv4();
       return new Promise((resolve) => {
           this.pendingRequests.set(id, resolve);
-          this.send({
+          if (config.SAFE_MODE) {
+            this.send({
               type: 'tool_call',
               id,
               payload: { tool, args }
-          });
+            });
+          } else {
+            this.send({
+              type: 'req',
+              id,
+              method: 'tool.call',
+              params: { tool, args },
+            });
+          }
           
           // Timeout after 30s
           setTimeout(() => {
@@ -466,6 +535,9 @@ export class GatewayClient extends EventEmitter {
 
   disconnect() {
     this.shouldKeyReconnect = false;
+    this.sessionReady = false;
+    this.connectRequestId = null;
+    this.pendingHealthChecks.clear();
     if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
     if (this.handshakeFallbackTimer) clearTimeout(this.handshakeFallbackTimer);
     if (this.reconnectOverrideTimer) clearTimeout(this.reconnectOverrideTimer);

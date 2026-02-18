@@ -27,7 +27,38 @@ export class MockGateway extends EventEmitter {
     console.log('[MockGateway] Received message:', JSON.stringify(parsed));
     
     // Simulate responses based on message type
-    if (parsed.type === 'connect') {
+    if (parsed.type === 'req' && parsed.method === 'connect') {
+      setTimeout(() => {
+        this.emit('message', JSON.stringify({
+          type: 'res',
+          id: parsed.id,
+          ok: true,
+          result: { protocol: 3, role: 'operator', sessionId: 'mock-session' }
+        }));
+      }, 100);
+    } else if (parsed.type === 'req' && parsed.method === 'health') {
+      setTimeout(() => {
+        this.emit('message', JSON.stringify({
+          type: 'res',
+          id: parsed.id,
+          ok: true,
+          result: { ok: true }
+        }));
+      }, 60);
+    } else if (parsed.type === 'req' && parsed.method === 'tool.call') {
+      setTimeout(() => {
+        this.emit('message', JSON.stringify({
+          type: 'res',
+          id: parsed.id,
+          ok: true,
+          result: {
+            mocked: true,
+            tool: parsed.params?.tool,
+            args: parsed.params?.args ?? {},
+          },
+        }));
+      }, 120);
+    } else if (parsed.type === 'connect') {
       setTimeout(() => {
         this.emit('message', JSON.stringify({
           type: 'connect_ack',
