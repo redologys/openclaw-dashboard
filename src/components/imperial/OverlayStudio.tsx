@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Play, Download, RefreshCw, Eye, Layers, FileText } from 'lucide-react';
 import { clsx } from 'clsx';
-import { clientConfig } from '../../lib/clientConfig';
+import { useGatewayStatus } from '../../lib/useGatewayStatus';
 
 interface FactV2 {
     id: string;
@@ -12,6 +12,9 @@ interface FactV2 {
 }
 
 export function OverlayStudio() {
+    const { status } = useGatewayStatus(5000);
+    const safeMode = status.safeMode;
+
     const [facts, setFacts] = useState<FactV2[]>([
         { id: '1', text: 'The Roman Empire used a complex system of roads that spanned over 250,000 miles.', score: 8 },
         { id: '2', text: 'Vikings didn’t actually wear horned helmets in battle; this was a later myth.', score: 7 },
@@ -26,7 +29,7 @@ export function OverlayStudio() {
     const handleRender = async () => {
         if (!selectedFact) return;
         
-        if (clientConfig.SAFE_MODE) {
+        if (safeMode) {
             console.warn('[OverlayStudio] SAFE_MODE active. Render blocked.');
             setIsRendering(true);
             setTimeout(() => {
@@ -146,7 +149,7 @@ export function OverlayStudio() {
                             </div>
                         )}
 
-                        {clientConfig.SAFE_MODE && (
+                        {safeMode && (
                             <div className="absolute top-4 left-4 z-20 bg-rose-500/10 border border-rose-500/50 px-3 py-1.5 rounded-full backdrop-blur-md flex items-center gap-2">
                                 <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
                                 <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Safe Mode Active</span>

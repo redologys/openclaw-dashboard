@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react';
 import { BrowserStatusBar } from './BrowserStatusBar';
 import { InteractiveOverlay } from './InteractiveOverlay';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { clientConfig } from '../../../lib/clientConfig';
 
-export function BrowserPreview() {
+export function BrowserPreview({ safeMode }: { safeMode: boolean }) {
     const [screenshot, setScreenshot] = useState<string | null>(null);
     const [state, setState] = useState<any>(null);
     const [interactive, setInteractive] = useState(false);
@@ -12,7 +11,7 @@ export function BrowserPreview() {
     const [error, setError] = useState<string | null>(null);
 
     const fetchScreenshot = async (manual = false) => {
-        if (!manual && (!state?.active || clientConfig.SAFE_MODE)) return;
+        if (!manual && (!state?.active || safeMode)) return;
         
         try {
             const res = await fetch('/api/browser/screenshot');
@@ -48,7 +47,7 @@ export function BrowserPreview() {
         };
         tick();
         return () => clearTimeout(timer);
-    }, [state?.active]);
+    }, [state?.active, safeMode]);
 
     useEffect(() => {
         const events = new EventSource('/api/browser/events');
@@ -112,7 +111,7 @@ export function BrowserPreview() {
                             </div>
                             <div>
                                 <p className="text-zinc-400 font-bold mb-1 uppercase tracking-widest text-[10px]">Browser Stream Offline</p>
-                                <p className="opacity-50 max-w-xs">{clientConfig.SAFE_MODE ? 'Safemode active. Live stream requires gateway connection.' : 'Connect gateway to enable live visual monitoring.'}</p>
+                                <p className="opacity-50 max-w-xs">{safeMode ? 'Safemode active. Live stream requires gateway connection.' : 'Connect gateway to enable live visual monitoring.'}</p>
                             </div>
                         </div>
                     )}

@@ -4,6 +4,6 @@ const toBool = (value: unknown, fallback: boolean) => {
 }
 
 export const clientConfig = {
-  SAFE_MODE: toBool(import.meta.env.VITE_SAFE_MODE, true),
+  SAFE_MODE: toBool(import.meta.env.VITE_SAFE_MODE, false),
   SSH_HOST: import.meta.env.VITE_SSH_HOST ?? '18.227.140.90',
 }

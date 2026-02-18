@@ -1,11 +1,15 @@
 import { useRef, useEffect } from 'react';
 import { clientConfig } from '../../lib/clientConfig';
+import { useGatewayStatus } from '../../lib/useGatewayStatus';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import { Terminal as TerminalIcon, Maximize2, RefreshCw } from 'lucide-react';
 
 export function TerminalWidget() {
+    const { status } = useGatewayStatus(5000);
+    const safeMode = status.safeMode;
+
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<XTerm | null>(null);
 
@@ -31,7 +35,7 @@ export function TerminalWidget() {
         fitAddon.fit();
         
         term.writeln('\x1b[38;5;214mOpenClaw Imperial Terminal v1.0.0\x1b[0m');
-        if (clientConfig.SAFE_MODE) {
+        if (safeMode) {
             term.writeln('\x1b[38;5;196m[SAFE_MODE] Connection restricted to Simulation Layer.\x1b[0m');
         } else {
             term.writeln(`Connecting to remote host: \x1b[38;5;111m${clientConfig.SSH_HOST}\x1b[0m`);
@@ -48,7 +52,7 @@ export function TerminalWidget() {
             window.removeEventListener('resize', handleResize);
             term.dispose();
         };
-    }, []);
+    }, [safeMode]);
 
     const handleClear = () => {
         if (xtermRef.current) {
@@ -79,7 +83,7 @@ export function TerminalWidget() {
             </div>
             <div className="flex-1 p-2 bg-[#09090b] relative">
                 <div ref={terminalRef} className="h-full w-full" />
-                {clientConfig.SAFE_MODE && (
+                {safeMode && (
                     <div className="absolute top-4 right-4 z-20 bg-rose-500/10 border border-rose-500/50 px-3 py-1.5 rounded-full backdrop-blur-md flex items-center gap-2">
                         <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
                         <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Safe Mode Active</span>

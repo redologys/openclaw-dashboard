@@ -4,9 +4,8 @@ import {
     Send, Cpu, Layout, AlertOctagon, History,
     Youtube, BarChart3, Film, Cookie, BookOpen
 } from 'lucide-react';
-import { clientConfig } from '../../../lib/clientConfig';
 
-export function ControlPanel() {
+export function ControlPanel({ safeMode }: { safeMode: boolean }) {
     const [isEnabled, setIsEnabled] = useState(false);
     const [url, setUrl] = useState('');
     const [task, setTask] = useState('');
@@ -43,7 +42,7 @@ export function ControlPanel() {
                     </div>
                     <button 
                         onClick={handleEnableToggle}
-                        disabled={clientConfig.SAFE_MODE}
+                        disabled={safeMode}
                         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all
                             ${isEnabled 
                                 ? 'bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/50' 
@@ -51,7 +50,7 @@ export function ControlPanel() {
                             } disabled:opacity-50 disabled:grayscale`}
                     >
                         {isEnabled ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
-                        {clientConfig.SAFE_MODE ? 'Disabled in Safe Mode' : (isEnabled ? 'Stop Browser' : 'Enable Browser')}
+                        {safeMode ? 'Disabled in Safe Mode' : (isEnabled ? 'Stop Browser' : 'Enable Browser')}
                     </button>
                 </div>
 
@@ -160,7 +159,7 @@ export function ControlPanel() {
                 </div>
             </div>
 
-            {clientConfig.SAFE_MODE && (
+            {safeMode && (
                 <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center gap-4">
                     <AlertOctagon className="w-6 h-6 text-rose-500 shrink-0" />
                     <div>
