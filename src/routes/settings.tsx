@@ -19,10 +19,21 @@ interface GatewayConfigResponse {
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
-  const payload = await response.json()
+  const raw = await response.text()
+
+  let payload: any = {}
+  if (raw.trim().length > 0) {
+    try {
+      payload = JSON.parse(raw)
+    } catch {
+      throw new Error(`Expected JSON from ${url}, received invalid response (status ${response.status}).`)
+    }
+  }
+
   if (!response.ok) {
     throw new Error(payload?.error ?? `Request failed (${response.status})`)
   }
+
   return payload as T
 }
 
